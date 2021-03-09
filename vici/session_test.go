@@ -464,3 +464,44 @@ func TestCloseAfterEOF(t *testing.T) {
 		}
 	}()
 }
+
+// TestCloseOnFullEventChan tests the condition where Session.Close() is called
+// while the event listener is trying to send an error on a full event channel.
+// See: https://github.com/strongswan/govici/issues/34#issuecomment-698138510
+//
+// The setup for this test is a little strange. We need to first make the event
+// channel for the event listener unbuffered so that the first time an error
+// is written, it will block. Then, we need to subscribe to an event so that el.events
+// is non-nil. Then, close the net.Conn so that the event listener loop sees io.EOF
+// which needs to be written to the event channel. Finally, sleep so that Close() does
+// not beat the loop, and then try to Close the Session.
+func TestCloseOnFullEventChan(t *testing.T) {
+	dctx, dcancel := context.WithCancel(context.Background())
+	defer dcancel()
+
+	conn := mockCharon(dctx)
+
+	s, err := NewSession(withTestConn(conn))
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+
+	// Make sure that any writes to el.ec will block.
+	s.el.ec = make(chan Event)
+
+	// Subscribe to an event so that len(el.events) > 0.
+	err = s.Subscribe("test-event")
+	if err != nil {
+		t.Fatalf("Failed to start event listener: %v", err)
+	}
+
+	// Close the event listener connection so that the listener()
+	// loop sees io.EOF.
+	s.el.conn.Close()
+
+	// Magic sleep...
+	time.Sleep(3 * time.Second)
+
+	// ... and try to close
+	s.Close()
+}

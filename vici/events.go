@@ -159,7 +159,12 @@ func (el *eventListener) listen() {
 			// must be for a event registration.
 			el.mu.Lock()
 			if len(el.events) > 0 {
-				el.ec <- Event{err: err}
+				// Try to write the err to the event channel, but if the
+				// event channel is full, do not hold up the rest of the loop.
+				select {
+				case el.ec <- Event{err: err}:
+				default:
+				}
 			}
 			el.mu.Unlock()
 
