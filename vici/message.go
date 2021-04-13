@@ -231,6 +231,27 @@ func (m *Message) Get(key string, keys ...string) interface{} {
 	return tmp.data[keys[last]]
 }
 
+// GetString is like Get, but expects the returned type to be string. If it is
+// not, then ok is set to false.
+func (m *Message) GetString(key string, keys ...string) (s string, ok bool) {
+	s, ok = m.Get(key, keys...).(string)
+	return s, ok
+}
+
+// GetString is like Get, but expects the returned type to be []string. If it
+// is not, then ok is set to false.
+func (m *Message) GetList(key string, keys ...string) (l []string, ok bool) {
+	l, ok = m.Get(key, keys...).([]string)
+	return l, ok
+}
+
+// GetString is like Get, but expects the returned type to be *Message. If it
+// is not, then ok is set to false.
+func (m *Message) GetSection(key string, keys ...string) (ms *Message, ok bool) {
+	ms, ok = m.Get(key, keys...).(*Message)
+	return ms, ok
+}
+
 // Keys returns the list of valid message keys.
 func (m *Message) Keys() []string {
 	keys := make([]string, len(m.keys))
