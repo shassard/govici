@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"sync"
 	"time"
 )
@@ -124,17 +123,8 @@ func (el *eventListener) listen() {
 			// Try to read a packet...
 		}
 
-		// Set a read deadline so that this loop can continue
-		// at a reasonable pace. If the error is a timeout,
-		// do not send it on the event channel.
-		_ = el.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-
 		p, err := el.recv()
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				continue
-			}
-
 			// If there is an error already buffered, that means there
 			// was no eventTransportCommunicate caller to read it. The
 			// buffer size is only 1, so flush before writing.
