@@ -37,11 +37,6 @@ var (
 type eventListener struct {
 	*transport
 
-	// Internal Context and CancelFunc used to stop the
-	// listen loop.
-	ctx    context.Context
-	cancel context.CancelFunc
-
 	// Event channel and the events it's listening for.
 	ec chan Event
 
@@ -71,12 +66,8 @@ type Event struct {
 }
 
 func newEventListener(t *transport) *eventListener {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	el := &eventListener{
 		transport: t,
-		ctx:       ctx,
-		cancel:    cancel,
 		ec:        make(chan Event, 16),
 		pc:        make(chan *packet, 4),
 	}
@@ -95,10 +86,6 @@ func (el *eventListener) Close() error {
 		return err
 	}
 
-	// Cancel the event listener context, thus
-	// stopping the listen goroutine, and wait
-	// for the destroy context to be done.
-	el.cancel()
 	el.conn.Close()
 
 	return nil
@@ -113,15 +100,6 @@ func (el *eventListener) listen() {
 	defer close(el.pc)
 
 	for {
-		select {
-		case <-el.ctx.Done():
-			// Event listener is closing...
-			return
-
-		default:
-			// Try to read a packet...
-		}
-
 		p, err := el.recv()
 		if err != nil {
 			return
