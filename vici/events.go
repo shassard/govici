@@ -51,8 +51,7 @@ type eventListener struct {
 
 	// Packet channel used to communicate event registration
 	// results.
-	pc   chan *packet
-	perr chan error
+	pc chan *packet
 }
 
 // Event represents an event received by a Session sent from the
@@ -80,7 +79,6 @@ func newEventListener(t *transport) *eventListener {
 		cancel:    cancel,
 		ec:        make(chan Event, 16),
 		pc:        make(chan *packet, 4),
-		perr:      make(chan error, 1),
 	}
 
 	go el.listen()
@@ -112,6 +110,7 @@ func (el *eventListener) listen() {
 	// Clean up the event channel when this loop is closed. This
 	// ensures any active NextEvent callers return.
 	defer close(el.ec)
+	defer close(el.pc)
 
 	for {
 		select {
@@ -125,26 +124,7 @@ func (el *eventListener) listen() {
 
 		p, err := el.recv()
 		if err != nil {
-			// If there is an error already buffered, that means there
-			// was no eventTransportCommunicate caller to read it. The
-			// buffer size is only 1, so flush before writing.
-			select {
-			case <-el.perr:
-			default:
-			}
-			el.perr <- err
-
-			// If we got EOF, then the event listener transport
-			// has been closed (by a stopped daemon or otherwise),
-			// and all subsequent calls to recv() will result in
-			// the same error. Time to break out of the loop.
-			//
-			// See https://github.com/strongswan/govici/issues/24.
-			if err == io.EOF {
-				return
-			}
-
-			continue
+			return
 		}
 
 		ts := time.Now()
@@ -267,34 +247,15 @@ func (el *eventListener) eventRegisterUnregister(event string, register bool) er
 }
 
 func (el *eventListener) eventTransportCommunicate(pkt *packet) (*packet, error) {
-	// If an error was sent over this channel while a
-	// transport communication was not active, flush
-	// it out quick before sending the packet.
-	//
-	// The channel buffer is only 1, so if there is an
-	// error buffered, it is the _only_ error buffered.
-	select {
-	case <-el.perr:
-	default:
-	}
-
 	err := el.send(pkt)
 	if err != nil {
 		return nil, err
 	}
 
-	// After the packet is sent, rely on the listen loop
-	// to communicate the response. Previously, the read
-	// deadline here was set to 1 second. Because this logic
-	// may prove fragile, add an extra second for cushion.
-	select {
-	case <-time.After(2 * time.Second):
-		return nil, errTransport
-
-	case err := <-el.perr:
-		return nil, err
-
-	case p := <-el.pc:
-		return p, nil
+	p, ok := <-el.pc
+	if !ok {
+		return nil, io.ErrClosedPipe
 	}
+
+	return p, nil
 }
